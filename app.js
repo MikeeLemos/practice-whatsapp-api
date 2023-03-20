@@ -1,4 +1,4 @@
-const { Client } = require('whatsapp-web.js');
+const { Client, MessageMedia } = require('whatsapp-web.js');
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const socketIO = require('socket.io');
@@ -6,6 +6,8 @@ const qrcode = require('qrcode');
 const http = require('http');
 const fs = require('fs');
 const { phoneNumberFormatter } = require('./helpers/formatter');
+const fileUpload = require('express-fileupload');
+const axios = require('axios');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +15,11 @@ const io = socketIO(server);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(
+  fileUpload({
+    debug: true,
+  })
+);
 
 const SESSION_FILE_PATH = './whatsapp-session.json';
 let sessionCfg;
@@ -140,6 +147,41 @@ app.post(
       });
   }
 );
+
+// Send media
+app.post('/send-media', async (req, res) => {
+  const number = phoneNumberFormatter(req.body.number);
+  const caption = req.body.caption;
+  const fileUrl = req.body.file;
+
+  // const media = MessageMedia.fromFilePath('./image-example.png');
+  // const file = req.files.file;
+  // const media = new MessageMedia(file.mimetype, file.data.toString('base64'), file.name);
+  let mimetype;
+  const attachment = await axios
+    .get(fileUrl, { responseType: 'arraybuffer' })
+    .then((response) => {
+      mimetype = response.headers['content-type'];
+      return response.data.toString('base64');
+    });
+
+  const media = new MessageMedia(mimetype, attachment, 'Media');
+
+  client
+    .sendMessage(number, media, { caption: caption })
+    .then((response) => {
+      res.status(200).json({
+        status: true,
+        response: response,
+      });
+    })
+    .catch((err) => {
+      res.status(500).json({
+        status: false,
+        response: err,
+      });
+    });
+});
 
 server.listen(8000, function () {
   console.log('App running on *: ' + 8000);
